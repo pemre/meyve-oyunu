@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Meyve Eşleştirme</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; font: 16px/1.4 -apple-system, system-ui, sans-serif; background: #14161a; color: #eee;
+         display: flex; flex-direction: column; min-height: 100vh; padding: 8px 10px 14px; }
+  header { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  select, button { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid #3a3f47;
+                   background: #22262c; color: #eee; }
+  button { cursor: pointer; }
+  #hud { margin-left: auto; font-variant-numeric: tabular-nums; color: #9aa3ad; font-size: 15px; }
+  #board { display: grid; gap: 6px; flex: 1; align-content: start; }
+  .card { position: relative; aspect-ratio: 1; perspective: 600px; cursor: pointer; }
+  .inner { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform .28s; }
+  .card.up .inner, .card.done .inner { transform: rotateY(180deg); }
+  .face { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+          border-radius: 10px; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+          font-size: min(9vw, 46px); user-select: none; }
+  .back { background: linear-gradient(145deg, #2f6b46, #1f4a30); font-size: min(6vw, 28px); }
+  .front { background: #f3efe4; transform: rotateY(180deg); }
+  .done { opacity: .35; transition: opacity .4s; }
+  #win { position: fixed; inset: 0; display: none; place-items: center; background: #14161add;
+         font-size: 24px; text-align: center; padding: 24px; }
+  #win.show { display: grid; }
+</style>
+</head>
+<body>
+<header>
+  <select id="size"></select>
+  <button id="restart">Yeniden</button>
+  <span id="hud"></span>
+</header>
+<div id="board"></div>
+<div id="win"></div>
+
+<script>
+const FRUITS = ['🍎','🍌','🍇','🍓','🍊','🍋','🍉','🍒','🍑','🥝','🍍','🥭','🍐','🥥','🫐','🍈','🍏','🍅'];
+const SIZES = [[4,2],[4,3],[4,4],[4,5],[5,6],[6,6]];
+
+function makeDeck(rows, cols) {
+  const n = rows * cols;
+  if (n % 2) throw new Error('kart sayısı çift olmalı');
+  if (n / 2 > FRUITS.length) throw new Error('yeterli meyve yok');
+  const deck = [];
+  for (let i = 0; i < n / 2; i++) deck.push(FRUITS[i], FRUITS[i]);
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  return deck;
+}
+
+// self-check: her meyveden tam 2 tane, hepsi farklı konumlarda
+{
+  const d = makeDeck(4, 5);
+  const c = {};
+  d.forEach(f => c[f] = (c[f] || 0) + 1);
+  console.assert(d.length === 20 && Object.values(c).every(v => v === 2), 'deste hatalı', c);
+}
+
+const board = document.getElementById('board');
+const hud = document.getElementById('hud');
+const sizeSel = document.getElementById('size');
+const winEl = document.getElementById('win');
+let open = [], moves = 0, matched = 0, t0 = 0, timer = null, lock = false;
+
+SIZES.forEach(([r, c]) => {
+  const o = document.createElement('option');
+  o.value = r + 'x' + c;
+  o.textContent = c + ' × ' + r + (r === 4 && c === 5 ? ' (varsayılan)' : '');
+  sizeSel.appendChild(o);
+});
+sizeSel.value = '4x5';
+
+function start() {
+  const [r, c] = sizeSel.value.split('x').map(Number);
+  board.style.gridTemplateColumns = `repeat(${c}, 1fr)`;
+  board.innerHTML = '';
+  winEl.className = '';
+  open = []; moves = 0; matched = 0; lock = false;
+  clearInterval(timer); t0 = Date.now();
+  timer = setInterval(show, 200);
+  makeDeck(r, c).forEach(f => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="inner"><div class="face back">🍃</div><div class="face front">${f}</div></div>`;
+    card.onclick = () => flip(card, f);
+    board.appendChild(card);
+  });
+  show();
+  document.getElementById('win').style.fontSize = '';
+}
+
+function show() {
+  const s = Math.floor((Date.now() - t0) / 1000);
+  hud.textContent = `Hamle: ${moves} · ${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function flip(card, fruit) {
+  if (lock || card.classList.contains('up') || card.classList.contains('done')) return;
+  card.classList.add('up');
+  open.push([card, fruit]);
+  if (open.length < 2) return;
+  moves++; show();
+  const [[a, fa], [b, fb]] = open;
+  if (fa === fb) {
+    open = []; matched++;
+    a.classList.add('done'); b.classList.add('done');
+    if (matched === (+sizeSel.value.split('x')[0] * +sizeSel.value.split('x')[1]) / 2) {
+      clearInterval(timer);
+      winEl.textContent = `Tebrikler! ${moves} hamle, ${hud.textContent.split('· ')[1]}`;
+      winEl.className = 'show';
+      winEl.onclick = start;
+    }
+  } else {
+    lock = true;
+    setTimeout(() => {
+      a.classList.remove('up'); b.classList.remove('up');
+      open = []; lock = false;
+    }, 750);
+  }
+}
+
+sizeSel.onchange = start;
+document.getElementById('restart').onclick = start;
+start();
+</script>
+</body>
+</html>
