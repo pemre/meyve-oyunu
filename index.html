@@ -98,7 +98,7 @@ function start() {
 }
 
 function flip(card) {
-  if (lock || card.classList.contains('up')) return;
+  if (lock || card.classList.contains('up') || card.classList.contains('done')) return;
   card.classList.add('up');
   card.textContent = card.dataset.fruit;
   open.push(card);
