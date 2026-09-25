@@ -2,30 +2,28 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#14161a">
 <title>Meyve Eşleştirme</title>
 <style>
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  body { margin: 0; font: 16px/1.4 -apple-system, system-ui, sans-serif; background: #14161a; color: #eee;
-         display: flex; flex-direction: column; min-height: 100vh; padding: 8px 10px 14px; }
-  header { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
-  select, button { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid #3a3f47;
-                   background: #22262c; color: #eee; }
-  button { cursor: pointer; }
-  #hud { margin-left: auto; font-variant-numeric: tabular-nums; color: #9aa3ad; font-size: 15px; }
-  #board { display: grid; gap: 6px; flex: 1; align-content: start; }
-  .card { position: relative; aspect-ratio: 1; perspective: 600px; cursor: pointer; }
-  .inner { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform .28s; }
-  .card.up .inner, .card.done .inner { transform: rotateY(180deg); }
-  .face { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-          border-radius: 10px; backface-visibility: hidden; -webkit-backface-visibility: hidden;
-          font-size: min(9vw, 46px); user-select: none; }
-  .back { background: linear-gradient(145deg, #2f6b46, #1f4a30); font-size: min(6vw, 28px); }
-  .front { background: #f3efe4; transform: rotateY(180deg); }
-  .done { opacity: .35; transition: opacity .4s; }
-  #win { position: fixed; inset: 0; display: none; place-items: center; background: #14161add;
-         font-size: 24px; text-align: center; padding: 24px; }
-  #win.show { display: grid; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;padding:8px 10px 14px;font:16px/1.4 -apple-system,system-ui,sans-serif;background:#14161a;color:#eee;
+       display:flex;flex-direction:column;min-height:100vh;min-height:100dvh}
+  header{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+  select,button{font:inherit;padding:6px 10px;border-radius:8px;border:1px solid #3a3f47;background:#22262c;color:#eee}
+  #hud{margin-left:auto;font-variant-numeric:tabular-nums;color:#9aa3ad;font-size:15px}
+  #board{display:grid;gap:6px;flex:1;align-content:start}
+  /* düz 2D kart — iOS Safari'nin 3D backface hatasına takılmaz */
+  .card{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:10px;
+        background:linear-gradient(145deg,#2f6b46,#1f4a30);font-size:min(9vw,46px);
+        cursor:pointer;transition:transform .15s,background .15s;user-select:none;-webkit-user-select:none;
+        touch-action:manipulation;will-change:transform}
+  .card:active{transform:scale(.94)}
+  .card.up{background:#f3efe4}
+  .card.done{background:#e6e0cf;opacity:.35;transition:opacity .35s}
+  #win{position:fixed;inset:0;display:none;place-items:center;background:#14161add;font-size:22px;text-align:center;padding:24px}
+  #win.show{display:grid}
 </style>
 </head>
 <body>
@@ -54,10 +52,9 @@ function makeDeck(rows, cols) {
   return deck;
 }
 
-// self-check: her meyveden tam 2 tane, hepsi farklı konumlarda
+// self-check: her meyveden tam 2 tane
 {
-  const d = makeDeck(4, 5);
-  const c = {};
+  const d = makeDeck(4, 5), c = {};
   d.forEach(f => c[f] = (c[f] || 0) + 1);
   console.assert(d.length === 20 && Object.values(c).every(v => v === 2), 'deste hatalı', c);
 }
@@ -66,7 +63,7 @@ const board = document.getElementById('board');
 const hud = document.getElementById('hud');
 const sizeSel = document.getElementById('size');
 const winEl = document.getElementById('win');
-let open = [], moves = 0, matched = 0, t0 = 0, timer = null, lock = false;
+let open = [], moves = 0, pairs = 0, paired = 0, t0 = 0, timer = null, lock = false;
 
 SIZES.forEach(([r, c]) => {
   const o = document.createElement('option');
@@ -74,52 +71,54 @@ SIZES.forEach(([r, c]) => {
   o.textContent = c + ' × ' + r + (r === 4 && c === 5 ? ' (varsayılan)' : '');
   sizeSel.appendChild(o);
 });
-sizeSel.value = '4x5';
-
-function start() {
-  const [r, c] = sizeSel.value.split('x').map(Number);
-  board.style.gridTemplateColumns = `repeat(${c}, 1fr)`;
-  board.innerHTML = '';
-  winEl.className = '';
-  open = []; moves = 0; matched = 0; lock = false;
-  clearInterval(timer); t0 = Date.now();
-  timer = setInterval(show, 200);
-  makeDeck(r, c).forEach(f => {
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.innerHTML = `<div class="inner"><div class="face back">🍃</div><div class="face front">${f}</div></div>`;
-    card.onclick = () => flip(card, f);
-    board.appendChild(card);
-  });
-  show();
-  document.getElementById('win').style.fontSize = '';
-}
 
 function show() {
   const s = Math.floor((Date.now() - t0) / 1000);
-  hud.textContent = `Hamle: ${moves} · ${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  hud.textContent = 'Hamle: ' + moves + ' · ' +
+    String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
 }
 
-function flip(card, fruit) {
-  if (lock || card.classList.contains('up') || card.classList.contains('done')) return;
+function start() {
+  const [r, c] = sizeSel.value.split('x').map(Number);
+  board.style.gridTemplateColumns = 'repeat(' + c + ', 1fr)';
+  board.innerHTML = '';
+  winEl.className = '';
+  open = []; moves = 0; paired = 0; lock = false;
+  pairs = r * c / 2;
+  clearInterval(timer); t0 = Date.now(); timer = setInterval(show, 200);
+  makeDeck(r, c).forEach(f => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.dataset.fruit = f;
+    card.textContent = '🍃';
+    card.onclick = () => flip(card);
+    board.appendChild(card);
+  });
+  show();
+}
+
+function flip(card) {
+  if (lock || card.classList.contains('up')) return;
   card.classList.add('up');
-  open.push([card, fruit]);
+  card.textContent = card.dataset.fruit;
+  open.push(card);
   if (open.length < 2) return;
+  const [a, b] = open;
   moves++; show();
-  const [[a, fa], [b, fb]] = open;
-  if (fa === fb) {
-    open = []; matched++;
+  if (a.dataset.fruit === b.dataset.fruit) {
+    open = []; paired++;
     a.classList.add('done'); b.classList.add('done');
-    if (matched === (+sizeSel.value.split('x')[0] * +sizeSel.value.split('x')[1]) / 2) {
+    if (paired === pairs) {
       clearInterval(timer);
-      winEl.textContent = `Tebrikler! ${moves} hamle, ${hud.textContent.split('· ')[1]}`;
+      winEl.textContent = 'Tebrikler! ' + moves + ' hamle · ' + hud.textContent.split('· ')[1];
       winEl.className = 'show';
       winEl.onclick = start;
     }
   } else {
     lock = true;
     setTimeout(() => {
-      a.classList.remove('up'); b.classList.remove('up');
+      a.classList.remove('up'); a.textContent = '🍃';
+      b.classList.remove('up'); b.textContent = '🍃';
       open = []; lock = false;
     }, 750);
   }
@@ -127,6 +126,7 @@ function flip(card, fruit) {
 
 sizeSel.onchange = start;
 document.getElementById('restart').onclick = start;
+sizeSel.value = '4x5';
 start();
 </script>
 </body>
